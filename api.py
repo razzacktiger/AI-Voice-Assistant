@@ -5,6 +5,10 @@ from dotenv import load_dotenv
 import firebase_admin
 from firebase_admin import credentials, auth
 from pydantic import BaseModel
+from sqlmodel import SQLModel, create_engine, Session, Field, select
+from typing import Generator
+# Make sure models.py is in the same directory or adjust path
+from models import User, CallSession
 
 # Load environment variables
 load_dotenv()
@@ -12,9 +16,8 @@ load_dotenv()
 # --- Firebase Admin SDK Initialization ---
 SERVICE_ACCOUNT_KEY_PATH = os.getenv("FIREBASE_SERVICE_ACCOUNT_KEY_PATH")
 if not SERVICE_ACCOUNT_KEY_PATH:
-    print("Error: FIREBASE_SERVICE_ACCOUNT_KEY_PATH environment variable not set.")
+    print("Warning: FIREBASE_SERVICE_ACCOUNT_KEY_PATH environment variable not set. Firebase auth disabled.")
     # exit(1) # Or handle more gracefully
-    # For now, we'll allow it to potentially fail later if not set
 else:
     try:
         cred = credentials.Certificate(SERVICE_ACCOUNT_KEY_PATH)
@@ -24,7 +27,50 @@ else:
         print(f"Error initializing Firebase Admin SDK: {e}")
         # Potentially exit or disable auth features
 
+# --- Database Connection Setup ---
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    print("Error: DATABASE_URL environment variable not set.")
+    # For development, you might use a default SQLite DB
+    # DATABASE_URL = "sqlite:///./database.db"
+    # print("Using default SQLite database.")
+    engine = None  # Or handle error
+else:
+    # echo=True is useful for debugging, shows SQL statements
+    # connect_args = {"check_same_thread": False} # Only needed for SQLite
+    engine = create_engine(DATABASE_URL, echo=True)
+
+
+def create_db_and_tables():
+    if engine:
+        print("Creating database tables (if they don't exist)...")
+        # --- Ensure import is HERE ---
+        # Import models specifically for table creation
+        from models import User, CallSession
+        # -----------------------------
+        SQLModel.metadata.create_all(engine)
+        print("Database tables checked/created.")
+    else:
+        print("Database engine not initialized. Skipping table creation.")
+
+# Dependency to get DB session
+
+
+def get_session() -> Generator[Session, None, None]:
+    if not engine:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    with Session(engine) as session:
+        yield session
+
+
+# --- FastAPI App Initialization ---
 app = FastAPI()
+
+
+@app.on_event("startup")
+def on_startup():
+    create_db_and_tables()
+
 
 # --- Globals / Config (Replace with proper config management later) ---
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
@@ -110,38 +156,47 @@ async def read_users_me(current_user: UserInfo = Depends(get_current_user)):
 
 
 @app.post("/api/call/start")
-async def start_call(current_user: UserInfo = Depends(get_current_user)):
+async def start_call(current_user: UserInfo = Depends(get_current_user), session: Session = Depends(get_session)):
     """Initiates a new call session (protected)."""
-    # TODO: Implement session creation logic (DB interaction, link to current_user.uid)
-    return {"session_id": f"session_for_{current_user.uid}", "message": "Call session started"}
+    print(f"Starting call for user: {current_user.uid}")
+    # TODO: Create CallSession model
+    # TODO: Create a new CallSession entry in the DB, link to current_user.uid
+    # new_session = models.CallSession(user_id=current_user.uid, status="started")
+    # session.add(new_session)
+    # session.commit()
+    # session.refresh(new_session)
+    # session_id = new_session.id
+    session_id = f"temp_session_for_{current_user.uid}"  # Placeholder
+    return {"session_id": session_id, "message": "Call session started"}
 
 
 @app.post("/api/rag/query")
 # Define request body model later
-async def rag_query(query: dict, current_user: UserInfo = Depends(get_current_user)):
+async def rag_query(query: dict, current_user: UserInfo = Depends(get_current_user), session: Session = Depends(get_session)):
     """Handles RAG query processing (protected)."""
     # TODO: Implement RAG logic (Pinecone -> LLM)
     transcript = query.get("transcript")
     session_id = query.get("session_id")
-    # TODO: Ensure session_id belongs to current_user
+    # TODO: Fetch CallSession from DB using session_id and verify ownership
+    # TODO: Store transcript/query and response in DB
     return {"response": f"Processed query for {current_user.uid} in session {session_id}: {transcript}"}
 
 
 @app.get("/api/analytics/report")
 # Assuming admin access check needed
-async def get_analytics_report(current_user: UserInfo = Depends(get_current_user)):
+async def get_analytics_report(current_user: UserInfo = Depends(get_current_user), session: Session = Depends(get_session)):
     """Returns analytics summary (protected)."""
     # TODO: Add role/permission check for admin access
-    # TODO: Implement analytics retrieval
+    # TODO: Implement analytics retrieval using DB session
     return {"calls_today": 10, "avg_duration_sec": 60}
 
 
 @app.get("/api/admin/export")
 # Assuming admin access check needed
-async def export_analytics(current_user: UserInfo = Depends(get_current_user)):
+async def export_analytics(current_user: UserInfo = Depends(get_current_user), session: Session = Depends(get_session)):
     """Returns analytics as CSV (protected)."""
     # TODO: Add role/permission check for admin access
-    # TODO: Implement CSV export
+    # TODO: Implement CSV export using DB session
     return {"message": "CSV export not implemented yet"}
 
 # --- WebSocket Endpoint ---

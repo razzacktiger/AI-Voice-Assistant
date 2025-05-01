@@ -11,15 +11,15 @@
 - [x] **Project Setup:** Set up `.env` file structure and add initial keys (User confirmed). (Completed: 2024-07-28)
 - [x] **Project Setup:** Create Python virtual environment (`venv`). (Completed: 2024-07-28)
 - [x] **API Endpoint Stubs:** Create stub functions/routes in `api.py` for required endpoints. (Completed: 2024-07-28)
-- [ ] **Project Setup:** Verify `.gitignore` includes `venv/`, `__pycache__/`, `.env*`.
+- [x] **Project Setup:** Verify `.gitignore` includes `venv/`, `__pycache__/`, `.env*`. (Completed: 2024-07-28)
 - [ ] **Authentication (Firebase):**
-  - [ ] Initialize Firebase Admin SDK in `api.py`.
+  - [x] Initialize Firebase Admin SDK in `api.py`. (Completed: 2024-07-28)
   - [ ] Implement basic user signup endpoint (e.g., `/auth/signup`).
   - [ ] Implement basic user login endpoint (e.g., `/auth/login`).
-  - [ ] Add FastAPI dependency/middleware for verifying Firebase ID tokens.
+  - [x] Add FastAPI dependency/middleware for verifying Firebase ID tokens. (Completed: 2024-07-28)
 - [ ] **Database Setup (PostgreSQL):**
-  - [ ] Set up DB connection logic (using environment variables).
-  - [ ] Define initial DB models (e.g., User, CallSession) using SQLAlchemy or SQLModel.
+  - [x] Set up DB connection logic (using environment variables). (Completed: 2024-07-28)
+  - [x] Define initial DB models (e.g., User, CallSession) using SQLModel. (Completed: 2024-07-28)
   - [ ] Implement basic DB interaction for user creation/retrieval.
 
 ## Phase 2: Real-time Voice Handling
