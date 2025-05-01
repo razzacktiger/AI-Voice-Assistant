@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+websockets
+python-dotenv
+deepgram-sdk==3.* # Specify version if needed, 3.* recommended for Agent/latest features
+openai
+pinecone-client
+psycopg2-binary # Or asyncpg if using async DB operations
+firebase-admin # For Authentication
+# Add other dependencies like SQLAlchemy/SQLModel later 

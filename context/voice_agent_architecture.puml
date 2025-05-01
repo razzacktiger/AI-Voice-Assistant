@@ -1,0 +1,40 @@
+
+@startuml
+!define RECTANGLE class
+skinparam style strictuml
+
+RECTANGLE WebApp {
+  :Login UI;
+  :Call Button;
+  :Admin Dashboard;
+}
+
+RECTANGLE Backend {
+  :Auth API;
+  :User Data API;
+  :Voice Session Manager;
+  :Analytics Service;
+  :Memory Store;
+}
+
+RECTANGLE AIEngine {
+  :Transcriber (DeepGram);
+  :TTS (DeepGram);
+  :LLM (OpenAI/GPT-4);
+  :RAG Engine;
+}
+
+RECTANGLE DataSources {
+  :Company KB;
+  :User DB;
+  :Pinecone Vector DB;
+}
+
+WebApp --> Backend : Auth/Login
+WebApp --> Backend : Initiate Voice Session
+Backend --> AIEngine : Stream Audio
+AIEngine --> DataSources : Query (RAG)
+AIEngine --> Backend : Response Stream
+Backend --> WebApp : Voice Reply (TTS)
+Backend --> WebApp : Analytics for Admin
+@enduml
