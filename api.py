@@ -16,6 +16,7 @@ from deepgram import (DeepgramClient, DeepgramClientOptions,
                       LiveTranscriptionEvents, LiveOptions,)
 import logging
 import functools  # Import functools if needed later
+from pinecone import Pinecone, ServerlessSpec, PodSpec  # Import Pinecone
 
 # Load environment variables
 load_dotenv()
@@ -85,7 +86,65 @@ def get_session() -> Generator[Session, None, None]:
         yield session
 
 
+# --- Utility Functions ---
+
+async def query_pinecone_index(transcript: str, top_k: int = 3) -> list[str]:
+    """Queries the Pinecone index with the given transcript.
+
+    Args:
+        transcript (str): The text transcript from STT.
+        top_k (int): The number of top results to retrieve from Pinecone.
+
+    Returns:
+        list[str]: A list of relevant context strings retrieved from Pinecone,
+                   or an empty list if an error occurs or Pinecone is disabled.
+    """
+    if not pinecone_client:
+        logging.warning("Pinecone client not available. Skipping query.")
+        return []
+
+    if not PINECONE_INDEX_NAME:
+        logging.error("PINECONE_INDEX_NAME not configured. Skipping query.")
+        return []
+
+    logging.info(
+        f"Querying Pinecone index '{PINECONE_INDEX_NAME}' with transcript: '{transcript[:50]}...'")
+
+    try:
+        # TODO: 1. Generate embeddings for the transcript (e.g., using OpenAI)
+        # Placeholder: For now, let's assume we have a dummy embedding or use the transcript itself
+        #            if the index was designed for simple keyword search (less common).
+        # Example: embedding = get_openai_embedding(transcript)
+        dummy_vector = [0.1] * 1536  # Replace with actual embedding dimension
+
+        # Get a handle to the index
+        index = pinecone_client.Index(PINECONE_INDEX_NAME)
+
+        # TODO: 2. Perform the query
+        # query_response = index.query(
+        #     vector=embedding,
+        #     top_k=top_k,
+        #     include_metadata=True # Include metadata to get original text
+        # )
+
+        # Placeholder response
+        logging.info(
+            f"Pinecone query successful (Placeholder). Would search for top {top_k} results.")
+        # Example processing:
+        # results = [match['metadata']['text'] for match in query_response['matches']]
+        results = [
+            f"Placeholder context related to '{transcript[:20]}' {i+1}" for i in range(top_k)]
+
+        return results
+
+    except Exception as e:
+        logging.error(
+            f"Error querying Pinecone index '{PINECONE_INDEX_NAME}': {e}")
+        return []
+
 # --- Lifespan Management ---
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     print("Application startup: Creating DB tables...")
@@ -101,16 +160,52 @@ app = FastAPI(lifespan=lifespan)
 # --- Globals / Config (Replace with proper config management later) ---
 DEEPGRAM_API_KEY = os.getenv("DEEPGRAM_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-if not DEEPGRAM_API_KEY:
-    print("Warning: DEEPGRAM_API_KEY environment variable not set.")
-# Add other keys/configs
+PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
+PINECONE_ENVIRONMENT = os.getenv("PINECONE_ENVIRONMENT")
+PINECONE_INDEX_NAME = os.getenv(
+    "PINECONE_INDEX_NAME", "ai-voice-assistant")  # Default name
 
 # Deepgram Client Configuration
 # Note: Consider moving sensitive config loading logic elsewhere later
-dg_config: DeepgramClientOptions = DeepgramClientOptions(
-    verbose=False  # Set to True for detailed SDK logging
-)
-deepgram: DeepgramClient = DeepgramClient(DEEPGRAM_API_KEY, dg_config)
+if not DEEPGRAM_API_KEY:
+    logging.warning("DEEPGRAM_API_KEY not found. Deepgram features disabled.")
+    deepgram = None
+else:
+    try:
+        dg_config: DeepgramClientOptions = DeepgramClientOptions(
+            verbose=logging.DEBUG)
+        deepgram: DeepgramClient | None = DeepgramClient(
+            DEEPGRAM_API_KEY, dg_config)
+        logging.info("Deepgram client initialized.")
+    except Exception as e:
+        logging.error(f"Error initializing Deepgram client: {e}")
+        deepgram = None
+
+# Pinecone Client
+pinecone_client: Pinecone | None = None
+if not PINECONE_API_KEY or not PINECONE_ENVIRONMENT:
+    logging.warning(
+        "PINECONE_API_KEY or PINECONE_ENVIRONMENT not found. Pinecone features disabled.")
+else:
+    try:
+        pinecone_client = Pinecone(api_key=PINECONE_API_KEY)
+        # Optional: Check if index exists and create if not?
+        # This might be better done in a separate setup script or lifespan event
+        # if PINECONE_INDEX_NAME not in pinecone_client.list_indexes().names:
+        #     pinecone_client.create_index(
+        #         name=PINECONE_INDEX_NAME,
+        #         dimension=1536, # Example dimension for OpenAI ada-002
+        #         metric='cosine',
+        #         spec=PodSpec(environment=PINECONE_ENVIRONMENT) # Or ServerlessSpec
+        #     )
+        #     logging.info(f"Created Pinecone index '{PINECONE_INDEX_NAME}'")
+        logging.info("Pinecone client initialized.")
+    except Exception as e:
+        logging.error(f"Error initializing Pinecone client: {e}")
+        pinecone_client = None
+
+# OpenAI Client (Placeholder for later)
+# ...
 
 # --- Pydantic Models ---
 

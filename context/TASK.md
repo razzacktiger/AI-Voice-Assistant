@@ -36,8 +36,8 @@
 ## Phase 3: RAG & LLM Integration
 
 - [ ] **Pinecone Setup:**
-  - [ ] Implement Pinecone client initialization.
-  - [ ] Create function to query Pinecone index based on transcript text.
+  - [x] Implement Pinecone client initialization. (Completed: 2025-05-04)
+  - [ ] Create function to query Pinecone index based on transcript text. _(Stub exists; needs embeddings & query logic)_
 - [ ] **OpenAI LLM Call:**
   - [ ] Implement OpenAI client initialization.
   - [ ] Create function to format prompt (transcript + Pinecone results + user context/session memory) and call GPT-4.

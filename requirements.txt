@@ -4,7 +4,7 @@ websockets
 python-dotenv
 deepgram-sdk==3.* # Specify version if needed, 3.* recommended for Agent/latest features
 openai
-pinecone-client
+pinecone
 psycopg2-binary # Or asyncpg if using async DB operations
 firebase-admin # For Authentication
 # Add other dependencies like SQLAlchemy/SQLModel later
@@ -13,4 +13,5 @@ sqlmodel
 # Testing
 pytest
 pytest-asyncio
-httpx 
+httpx
+ 
