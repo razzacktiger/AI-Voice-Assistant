@@ -14,20 +14,20 @@
 - [x] **Project Setup:** Verify `.gitignore` includes `venv/`, `__pycache__/`, `.env*`. (Completed: 2024-07-28)
 - [ ] **Authentication (Firebase):**
   - [x] Initialize Firebase Admin SDK in `api.py`. (Completed: 2024-07-28)
-  - [ ] Implement basic user signup endpoint (e.g., `/auth/signup`).
-  - [ ] Implement basic user login endpoint (e.g., `/auth/login`).
+  - [x] Implement basic user signup endpoint (e.g., `/auth/signup`). _(Handled by `get_current_user` upon first authenticated API call)_
+  - [x] Implement basic user login endpoint (e.g., `/auth/login`). _(Authentication handled by token verification in `get_current_user`)_
   - [x] Add FastAPI dependency/middleware for verifying Firebase ID tokens. (Completed: 2024-07-28)
 - [ ] **Database Setup (PostgreSQL):**
   - [x] Set up DB connection logic (using environment variables). (Completed: 2024-07-28)
   - [x] Define initial DB models (e.g., User, CallSession) using SQLModel. (Completed: 2024-07-28)
-  - [ ] Implement basic DB interaction for user creation/retrieval.
+  - [x] Implement basic DB interaction for user creation/retrieval. _(Handled by `get_current_user`)_
 
 ## Phase 2: Real-time Voice Handling
 
 - [ ] **WebSocket Endpoint:**
   - [ ] Implement WebSocket endpoint (`/ws`) in `api.py`. _(Stub exists)_
   - [ ] Handle WebSocket connection/disconnection. _(Basic handling exists)_
-  - [ ] Add authentication check for WebSocket connections (using Firebase token).
+  - [x] Add authentication check for WebSocket connections (using Firebase token). _(Implemented via query parameter)_
 - [ ] **Deepgram STT Integration:**
   - [ ] Establish connection to Deepgram Streaming STT endpoint from the backend WebSocket handler.
   - [ ] Forward audio chunks received from the client WebSocket to Deepgram STT.

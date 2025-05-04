@@ -8,4 +8,9 @@ pinecone-client
 psycopg2-binary # Or asyncpg if using async DB operations
 firebase-admin # For Authentication
 # Add other dependencies like SQLAlchemy/SQLModel later
-sqlmodel 
+sqlmodel
+
+# Testing
+pytest
+pytest-asyncio
+httpx 
