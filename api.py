@@ -17,6 +17,7 @@ from deepgram import (DeepgramClient, DeepgramClientOptions,
 import logging
 import functools  # Import functools if needed later
 from pinecone import Pinecone, ServerlessSpec, PodSpec  # Import Pinecone
+from openai import OpenAI  # Import OpenAI
 
 # Load environment variables
 load_dotenv()
@@ -142,6 +143,49 @@ async def query_pinecone_index(transcript: str, top_k: int = 3) -> list[str]:
             f"Error querying Pinecone index '{PINECONE_INDEX_NAME}': {e}")
         return []
 
+
+async def get_llm_response(prompt: str) -> str | None:
+    """Gets a response from the configured LLM (currently OpenAI).
+
+    Args:
+        prompt (str): The complete prompt to send to the LLM.
+
+    Returns:
+        str | None: The text response from the LLM, or None if an error occurs
+                    or the OpenAI client is disabled.
+    """
+    if not openai_client:
+        logging.warning("OpenAI client not available. Skipping LLM call.")
+        return None
+
+    # Log truncated prompt
+    logging.info(f"Sending prompt to OpenAI: '{prompt[:100]}...'")
+
+    try:
+        # Uncomment the actual OpenAI API call
+        response = await openai_client.chat.completions.create(
+            model="gpt-4o",  # Or your preferred model
+            messages=[
+                # Define system message, user message with prompt, etc.
+                {"role": "system",
+                    "content": "You are a helpful customer support assistant."},
+                {"role": "user", "content": prompt}
+            ],
+            # Add other parameters like temperature, max_tokens if needed
+        )
+        result = response.choices[0].message.content
+        logging.info(f"Received LLM response.")  # Log success
+
+        # Placeholder response (commented out for now)
+        # result = f"Placeholder LLM response for prompt starting with: '{prompt[:50]}'"
+        # logging.info(f"Received placeholder LLM response.")
+
+        return result
+
+    except Exception as e:
+        logging.error(f"Error getting response from OpenAI: {e}")
+        return None
+
 # --- Lifespan Management ---
 
 
@@ -204,8 +248,19 @@ else:
         logging.error(f"Error initializing Pinecone client: {e}")
         pinecone_client = None
 
-# OpenAI Client (Placeholder for later)
-# ...
+# OpenAI Client
+openai_client: OpenAI | None = None
+if not OPENAI_API_KEY:
+    logging.warning("OPENAI_API_KEY not found. OpenAI features disabled.")
+else:
+    try:
+        openai_client = OpenAI(api_key=OPENAI_API_KEY)
+        # Add organization ID if needed/available:
+        # openai_client = OpenAI(api_key=OPENAI_API_KEY, organization=os.getenv("OPENAI_ORG_ID"))
+        logging.info("OpenAI client initialized.")
+    except Exception as e:
+        logging.error(f"Error initializing OpenAI client: {e}")
+        openai_client = None
 
 # --- Pydantic Models ---
 
