@@ -1,6 +1,7 @@
-from sqlmodel import SQLModel, Field
-from typing import Optional
+from sqlmodel import SQLModel, Field, Column
+from typing import Optional, List, Dict, Any
 from datetime import datetime, timezone
+from sqlalchemy.dialects.postgresql import JSON
 
 # Using table=True makes these classes define database tables
 
@@ -26,6 +27,9 @@ class CallSession(SQLModel, table=True):
     end_time: Optional[datetime] = Field(default=None)
     status: str = Field(default="started", index=True,
                         description="e.g., started, ended, error")
+    # Add conversation history as a JSON field
+    conversation_history: List[Dict[str, Any]] = Field(
+        default_factory=list, sa_column=Column(JSON))
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc), nullable=False)
     # Consider adding fields for call summary, transcript ID, etc.

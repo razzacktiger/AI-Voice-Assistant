@@ -30,75 +30,106 @@ def mock_pinecone_instance():
 
 
 @pytest.mark.asyncio
-# Removed patched args from signature
+# Use fixture for mocks, context manager for patching api globals
 async def test_query_pinecone_index_success(mock_pinecone_instance):
-    """Tests successful query to Pinecone index (placeholder response)."""
-    # Use patch as context manager
-    with patch('api.pinecone_client') as mock_global_client_patch, \
-            patch('api.PINECONE_INDEX_NAME', 'test-index'):  # No need for handle if not used
+    """Tests successful query to Pinecone index."""
+    with patch('api.get_openai_embedding') as mock_get_embedding, \
+            patch('api.pinecone_client') as mock_global_client_patch, \
+            patch('api.PINECONE_INDEX_NAME', 'test-index'):
 
+        # Configure mock embedding function
+        dummy_embedding = [0.1] * 1536
+        mock_get_embedding.return_value = dummy_embedding
+
+        # Configure mock Pinecone client and index (using fixture)
         _, mock_index = mock_pinecone_instance
-        mock_global_client_patch.Index.return_value = mock_index
+        mock_global_client_patch.Index.return_value = mock_index  # Link patch to fixture mock
+
+        # Configure mock index query response
+        mock_index.query.return_value = {
+            'matches': [
+                {'id': 'vec1', 'score': 0.9, 'metadata': {'text': 'mock context 1'}},
+                {'id': 'vec2', 'score': 0.8, 'metadata': {'text': 'mock context 2'}}
+            ]
+        }
 
         transcript = "Tell me about project X"
         top_k = 2
-        expected_results = [
-            f"Placeholder context related to '{transcript[:20]}' 1",
-            f"Placeholder context related to '{transcript[:20]}' 2"
-        ]
+        expected_results = ['mock context 1', 'mock context 2']
 
         results = await query_pinecone_index(transcript, top_k=top_k)
 
+        # Assertions
+        mock_get_embedding.assert_awaited_once_with(transcript)
         mock_global_client_patch.Index.assert_called_once_with('test-index')
-        # mock_index.query.assert_called_once()
+        mock_index.query.assert_called_once()
+        call_args, call_kwargs = mock_index.query.call_args
+        assert call_kwargs['vector'] == dummy_embedding
+        assert call_kwargs['top_k'] == top_k
+        assert call_kwargs['include_metadata'] is True
         assert results == expected_results
 
 
 @pytest.mark.asyncio
-# Removed patched arg from signature
+async def test_query_pinecone_index_embedding_fails():
+    """Tests behavior when get_openai_embedding returns None."""
+    # Need to patch pinecone_client so the initial check passes
+    with patch('api.pinecone_client', MagicMock()), \
+            patch('api.PINECONE_INDEX_NAME', 'test-index'), \
+            patch('api.get_openai_embedding') as mock_get_embedding, \
+            patch('api.logging.error') as mock_log_error:
+
+        mock_get_embedding.return_value = None  # Simulate embedding failure
+        results = await query_pinecone_index("test transcript")
+
+    assert results == []
+    mock_get_embedding.assert_awaited_once_with("test transcript")
+    mock_log_error.assert_called_once()
+    assert "Failed to generate embedding" in mock_log_error.call_args[0][0]
+
+
+@pytest.mark.asyncio
 async def test_query_pinecone_index_disabled():
     """Tests behavior when Pinecone client is None (disabled)."""
-    with patch('api.pinecone_client', None):  # Patch directly in context
+    with patch('api.pinecone_client', None):
         results = await query_pinecone_index("test transcript")
         assert results == []
 
 
 @pytest.mark.asyncio
-# Removed patched args from signature
 async def test_query_pinecone_index_no_index_name():
     """Tests behavior when PINECONE_INDEX_NAME is not set."""
-    # Need a non-None client for the first check in the function
     with patch('api.pinecone_client', MagicMock()), \
-            patch('api.PINECONE_INDEX_NAME', None):  # Patch index name in context
+            patch('api.PINECONE_INDEX_NAME', None):
         results = await query_pinecone_index("test transcript")
         assert results == []
 
 
 @pytest.mark.asyncio
-# Removed patched args from signature
 async def test_query_pinecone_index_query_error(mock_pinecone_instance):
-    """Tests behavior when getting the index handle raises an exception."""
-    # Note: We test error during index fetch, as query() is currently commented out
-    with patch('api.pinecone_client') as mock_global_client_patch, \
+    """Tests behavior when index.query() raises an exception."""
+    with patch('api.get_openai_embedding') as mock_get_embedding, \
+            patch('api.pinecone_client') as mock_global_client_patch, \
             patch('api.PINECONE_INDEX_NAME', 'test-index'), \
             patch('api.logging.error') as mock_log_error:
 
-        # Configure the patched client's Index() method to raise an error
-        mock_global_client_patch.Index.side_effect = Exception(
-            "Pinecone connection failed!")
-        # _, mock_index = mock_pinecone_instance # No longer need mock_index here
-        # mock_index.query.side_effect = Exception("Pinecone query failed!") # Moved side effect
+        # Configure mock embedding
+        dummy_embedding = [0.2] * 1536
+        mock_get_embedding.return_value = dummy_embedding
+
+        # Configure Pinecone mocks to raise error on query
+        _, mock_index = mock_pinecone_instance
+        mock_global_client_patch.Index.return_value = mock_index
+        mock_index.query.side_effect = Exception("Pinecone query failed!")
 
         transcript = "This should fail"
         results = await query_pinecone_index(transcript)
 
         # Assertions
-        # Assert that the *patched* client's Index method was called (attempted)
+        mock_get_embedding.assert_awaited_once_with(transcript)
         mock_global_client_patch.Index.assert_called_once_with('test-index')
-        # mock_index.query.assert_called_once() # Query is not called, remove this
-        mock_log_error.assert_called_once()  # Error should have been logged
-        # Check that the specific error was logged
+        mock_index.query.assert_called_once()
+        mock_log_error.assert_called_once()
         assert "Error querying Pinecone index" in mock_log_error.call_args[0][0]
-        # Update expected exception message
-        assert "Pinecone connection failed!" in mock_log_error.call_args[0][0]
+        assert "Pinecone query failed!" in mock_log_error.call_args[0][0]
         assert results == []

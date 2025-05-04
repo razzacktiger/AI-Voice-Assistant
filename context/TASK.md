@@ -37,12 +37,12 @@
 
 - [ ] **Pinecone Setup:**
   - [x] Implement Pinecone client initialization. (Completed: 2025-05-04)
-  - [ ] Create function to query Pinecone index based on transcript text. _(Stub exists; needs embeddings & query logic)_
+  - [x] Implement function to query Pinecone index using OpenAI embeddings. (Completed: 2025-05-04)
 - [x] **OpenAI LLM Call:**
   - [x] Implement OpenAI client initialization. (Completed: 2025-05-04)
-  - [ ] Create function to format prompt (transcript + Pinecone results + user context/session memory) and call GPT-4. _(Stub exists; needs implementation)_
+  - [x] Create function to format prompt (transcript + Pinecone results) and call GPT-4. (Completed: 2025-05-04)
 - [ ] **RAG Query Logic (`/api/rag/query` or WebSocket flow):**
-  - [ ] Integrate transcript reception -> Pinecone query -> LLM call -> response generation.
+  - [x] Integrate transcript reception -> Pinecone query -> LLM call -> response generation. (Completed: 2025-05-04 - Currently logs LLM response in handler)
   - [ ] Implement basic session memory (e.g., store conversation history in DB or cache linked to session ID).
 
 ## Phase 4: TTS & Response Delivery
@@ -80,6 +80,7 @@
 - [ ] **Unit Tests:**
   - [ ] Set up `/tests` directory.
   - [ ] Write unit tests for authentication, API endpoints, RAG logic, etc.
+  - [x] Refactor tests into separate files per module. (Completed: 2025-05-04)
 - [ ] **Non-Functional Requirements:**
   - [ ] Test latency (< 1.5s).
   - [ ] Test concurrency.

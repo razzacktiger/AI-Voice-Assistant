@@ -112,29 +112,44 @@ async def query_pinecone_index(transcript: str, top_k: int = 3) -> list[str]:
         f"Querying Pinecone index '{PINECONE_INDEX_NAME}' with transcript: '{transcript[:50]}...'")
 
     try:
-        # TODO: 1. Generate embeddings for the transcript (e.g., using OpenAI)
+        # 1. Generate embeddings for the transcript
+        embedding = await get_openai_embedding(transcript)
+        if not embedding:
+            logging.error(
+                "Failed to generate embedding for transcript. Cannot query Pinecone.")
+            return []
+
         # Placeholder: For now, let's assume we have a dummy embedding or use the transcript itself
-        #            if the index was designed for simple keyword search (less common).
-        # Example: embedding = get_openai_embedding(transcript)
-        dummy_vector = [0.1] * 1536  # Replace with actual embedding dimension
+        # dummy_vector = [0.1] * 1536 # Replace with actual embedding dimension
 
         # Get a handle to the index
         index = pinecone_client.Index(PINECONE_INDEX_NAME)
 
-        # TODO: 2. Perform the query
-        # query_response = index.query(
-        #     vector=embedding,
-        #     top_k=top_k,
-        #     include_metadata=True # Include metadata to get original text
-        # )
+        # 2. Perform the query using the generated embedding
+        query_response = index.query(
+            vector=embedding,
+            top_k=top_k,
+            include_metadata=True  # Include metadata to get original text
+        )
 
-        # Placeholder response
+        # 3. Process the results
         logging.info(
-            f"Pinecone query successful (Placeholder). Would search for top {top_k} results.")
-        # Example processing:
-        # results = [match['metadata']['text'] for match in query_response['matches']]
-        results = [
-            f"Placeholder context related to '{transcript[:20]}' {i+1}" for i in range(top_k)]
+            f"Pinecone query successful. Found {len(query_response['matches'])} matches.")
+        # Extract the original text from metadata (assuming it's stored under 'text')
+        results = []
+        if query_response and query_response['matches']:
+            for match in query_response['matches']:
+                if 'metadata' in match and 'text' in match['metadata']:
+                    results.append(match['metadata']['text'])
+                else:
+                    logging.warning(
+                        f"Pinecone match missing metadata or text: {match.get('id')}")
+        else:
+            logging.info("Pinecone query returned no matches.")
+
+        # Placeholder response (REMOVE)
+        # logging.info(f"Pinecone query successful (Placeholder). Would search for top {top_k} results.")
+        # results = [f"Placeholder context related to '{transcript[:20]}' {i+1}" for i in range(top_k)]
 
         return results
 
@@ -144,42 +159,82 @@ async def query_pinecone_index(transcript: str, top_k: int = 3) -> list[str]:
         return []
 
 
-async def get_llm_response(prompt: str) -> str | None:
-    """Gets a response from the configured LLM (currently OpenAI).
+async def get_openai_embedding(text: str, model: str = "text-embedding-3-small") -> list[float] | None:
+    """Generates embeddings for the given text using the OpenAI API.
 
     Args:
-        prompt (str): The complete prompt to send to the LLM.
+        text (str): The text to embed.
+        model (str): The OpenAI embedding model to use.
 
     Returns:
-        str | None: The text response from the LLM, or None if an error occurs
-                    or the OpenAI client is disabled.
+        list[float] | None: The embedding vector, or None if an error occurs
+                            or the OpenAI client is disabled.
     """
     if not openai_client:
-        logging.warning("OpenAI client not available. Skipping LLM call.")
+        logging.warning(
+            "OpenAI client not available. Cannot generate embeddings.")
         return None
 
-    # Log truncated prompt
-    logging.info(f"Sending prompt to OpenAI: '{prompt[:100]}...'")
+    try:
+        # OpenAI recommends replacing newlines for better performance
+        text_to_embed = text.replace("\n", " ")
+        response = await openai_client.embeddings.create(
+            input=[text_to_embed],
+            model=model
+        )
+        embedding = response.data[0].embedding
+        logging.info(f"Generated embedding for text: '{text[:50]}...'")
+        return embedding
+    except Exception as e:
+        logging.error(f"Error generating OpenAI embedding: {e}")
+        return None
+
+
+# --- LLM Helper ---
+
+# Modified function signature and prompt formatting
+async def get_llm_response(transcript: str, pinecone_context: list[str]) -> str | None:
+    """Generates a response from the LLM based on transcript and context."""
+    if not openai_client:
+        logging.warning(
+            "OpenAI client not initialized. Cannot get LLM response.")
+        return None
+
+    # Format the context from Pinecone results
+    context_str = "\n".join(f"- {item}" for item in pinecone_context)
+    if not context_str:
+        context_str = "No relevant context found."
+
+    # Construct the prompt using a system and user message
+    messages = [
+        {
+            "role": "system",
+            "content": """You are a helpful AI voice assistant. Your goal is to answer the user's query based on the provided transcript and relevant context. Be concise and helpful."""
+        },
+        {
+            "role": "user",
+            "content": f"""Transcript of user query:
+{transcript}
+
+Relevant context:
+{context_str}
+
+Based on the transcript and context, please provide a helpful response."""
+        }
+    ]
 
     try:
-        # Uncomment the actual OpenAI API call
+        logging.info(f"Sending prompt to OpenAI LLM...")  # Log before API call
+        # print(f"DEBUG: Prompt Messages: {messages}") # Optional debug print
+
         response = await openai_client.chat.completions.create(
-            model="gpt-4o",  # Or your preferred model
-            messages=[
-                # Define system message, user message with prompt, etc.
-                {"role": "system",
-                    "content": "You are a helpful customer support assistant."},
-                {"role": "user", "content": prompt}
-            ],
-            # Add other parameters like temperature, max_tokens if needed
+            model="gpt-4",  # Or specify another model like gpt-3.5-turbo
+            messages=messages,
+            temperature=0.7,  # Adjust creativity/factuality
+            max_tokens=150  # Limit response length
         )
         result = response.choices[0].message.content
         logging.info(f"Received LLM response.")  # Log success
-
-        # Placeholder response (commented out for now)
-        # result = f"Placeholder LLM response for prompt starting with: '{prompt[:50]}'"
-        # logging.info(f"Received placeholder LLM response.")
-
         return result
 
     except Exception as e:
@@ -441,15 +496,38 @@ async def get_current_user_ws(token: str | None = Query(None)) -> UserInfo | Non
 # --- Standalone Deepgram Event Handlers ---
 
 async def handle_deepgram_message(result, **kwargs):
-    """Handles incoming transcript messages from Deepgram."""
-    # The 'self' argument is removed as it's a standalone function
+    """Handles incoming transcript messages, queries Pinecone, gets LLM response."""
     if result and hasattr(result, 'channel') and hasattr(result.channel, 'alternatives') and \
        len(result.channel.alternatives) > 0 and hasattr(result.channel.alternatives[0], 'transcript'):
-        sentence = result.channel.alternatives[0].transcript
-        if len(sentence.strip()) == 0:  # Check if transcript is empty or just whitespace
+        transcript = result.channel.alternatives[0].transcript
+        if len(transcript.strip()) == 0:
             return
-        logging.info(f"Deepgram ->Transcript: {sentence}")
-        # TODO: Process the transcript (e.g., RAG query, send back to client?)
+        logging.info(f"Deepgram -> Transcript: {transcript}")
+
+        # 1. Query Pinecone
+        logging.info(
+            f"Querying Pinecone for transcript: '{transcript[:50]}...'")
+        pinecone_context = await query_pinecone_index(transcript)
+        if pinecone_context:
+            logging.info(
+                f"Pinecone -> Found {len(pinecone_context)} context items.")
+            # Log first item for brevity
+            logging.info(
+                f"Pinecone -> Example context: {pinecone_context[0][:100]}...")
+        else:
+            logging.info("Pinecone -> No relevant context found.")
+
+        # 2. Get LLM Response
+        logging.info("Getting LLM response based on transcript and context...")
+        llm_response = await get_llm_response(transcript, pinecone_context)
+
+        # 3. Process LLM Response (Currently Logging)
+        if llm_response:
+            logging.info(f"LLM -> Response: {llm_response}")
+            # TODO: Send response back to the client via WebSocket
+        else:
+            logging.warning("LLM -> Failed to get response.")
+
     else:
         logging.warning(
             f"Deepgram -> Received unexpected message structure: {result}")
