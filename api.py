@@ -6,7 +6,8 @@ import firebase_admin
 from firebase_admin import credentials, auth
 from pydantic import BaseModel
 from sqlmodel import SQLModel, create_engine, Session, Field, select
-from typing import Generator
+from typing import Generator, AsyncGenerator
+from contextlib import asynccontextmanager
 # Make sure models.py is in the same directory or adjust path
 from models import User, CallSession
 
@@ -27,7 +28,7 @@ else:
         print(f"Error initializing Firebase Admin SDK: {e}")
         # Potentially exit or disable auth features
 
-# --- Database Connection Setup ---
+# --- Database Connection Setup --- (PostgreSQL or Supabase)
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     print("Error: DATABASE_URL environment variable not set.")
@@ -57,19 +58,38 @@ def create_db_and_tables():
 
 
 def get_session() -> Generator[Session, None, None]:
+    """
+    FastAPI dependency to get a database session.
+
+    Yields a SQLAlchemy Session object for database operations within a request.
+    Ensures the session is properly closed after the request.
+
+    Raises:
+        HTTPException: 503 Service Unavailable if the database engine is not configured.
+
+    Yields:
+        Generator[Session, None, None]: A SQLAlchemy Session object.
+    """
     if not engine:
+        # Reason: If the database connection wasn't established during startup,
+        # we cannot proceed with database operations. Raising 503 indicates
+        # a server-side configuration issue.
         raise HTTPException(status_code=503, detail="Database not configured")
     with Session(engine) as session:
         yield session
 
 
-# --- FastAPI App Initialization ---
-app = FastAPI()
-
-
-@app.on_event("startup")
-def on_startup():
+# --- Lifespan Management ---
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    print("Application startup: Creating DB tables...")
     create_db_and_tables()
+    yield
+    print("Application shutdown.")
+    # Add any cleanup logic here if needed
+
+# --- FastAPI App Initialization with Lifespan ---
+app = FastAPI(lifespan=lifespan)
 
 
 # --- Globals / Config (Replace with proper config management later) ---
@@ -84,10 +104,17 @@ class TokenData(BaseModel):
     id_token: str
 
 
+# UserInfo might not be needed if get_current_user returns the DB model
+# class UserInfo(BaseModel):
+#     uid: str
+#     email: str | None = None
+
+# --- Uncomment the UserInfo definition ---
 class UserInfo(BaseModel):
     uid: str
     email: str | None = None
     # Add other relevant user fields
+# -----------------------------------------
 
 # --- Authentication (Firebase) ---
 
@@ -111,15 +138,16 @@ async def verify_firebase_token(token: str | None = None) -> dict | None:
         return None
 
 
-async def get_current_user(token: str | None = Depends(lambda x: x.headers.get("Authorization"))) -> UserInfo:
-    """FastAPI dependency to get current user from Firebase token in Authorization header."""
+async def get_current_user(token: str | None = Depends(lambda x: x.headers.get("Authorization")), session: Session = Depends(get_session)) -> User:
+    """FastAPI dependency to get user from DB based on Firebase token.
+    Verifies token, then fetches user from DB or creates if not found.
+    """
     if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authorization header missing",
         )
 
-    # Typically token is "Bearer <token>", extract the actual token
     parts = token.split()
     if len(parts) != 2 or parts[0].lower() != "bearer":
         raise HTTPException(
@@ -136,15 +164,39 @@ async def get_current_user(token: str | None = Depends(lambda x: x.headers.get("
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Return a Pydantic model or dict with user info
-    return UserInfo(uid=user_payload["uid"], email=user_payload.get("email"))
+    firebase_uid = user_payload["uid"]
+    email = user_payload.get("email")
 
-# Example protected endpoint
+    # Check if user exists in our database
+    statement = select(User).where(User.firebase_uid == firebase_uid)
+    db_user = session.exec(statement).first()
+
+    if db_user is None:
+        # User does not exist, create them
+        print(f"Creating new user entry for firebase_uid: {firebase_uid}")
+        db_user = User(firebase_uid=firebase_uid, email=email)
+        session.add(db_user)
+        session.commit()
+        # Refresh to get DB-assigned ID and created_at
+        session.refresh(db_user)
+    else:
+        # Optional: Update email if it changed in Firebase?
+        # if email and db_user.email != email:
+        #    db_user.email = email
+        #    session.add(db_user)
+        #    session.commit()
+        #    session.refresh(db_user)
+        pass  # User exists
+
+    # Return the database User object (SQLModel instance)
+    return db_user
+
+# Example protected endpoint - now uses User model
 
 
-@app.get("/users/me", response_model=UserInfo)
-async def read_users_me(current_user: UserInfo = Depends(get_current_user)):
-    """Example endpoint protected by Firebase authentication."""
+@app.get("/users/me", response_model=User)
+async def read_users_me(current_user: User = Depends(get_current_user)):
+    """Example endpoint protected by Firebase authentication, returns DB user."""
     return current_user
 
 # TODO: Add actual signup/login endpoints.
@@ -152,39 +204,38 @@ async def read_users_me(current_user: UserInfo = Depends(get_current_user)):
 # and then potentially sending the ID token to backend endpoints like /users/me
 # or custom endpoints to create/update user profile in your own DB.
 
-# --- API Endpoints (Stubs) ---
+# --- API Endpoints (Stubs) - Update signatures to use User model ---
 
 
 @app.post("/api/call/start")
-async def start_call(current_user: UserInfo = Depends(get_current_user), session: Session = Depends(get_session)):
+async def start_call(current_user: User = Depends(get_current_user), session: Session = Depends(get_session)):
     """Initiates a new call session (protected)."""
-    print(f"Starting call for user: {current_user.uid}")
-    # TODO: Create CallSession model
-    # TODO: Create a new CallSession entry in the DB, link to current_user.uid
-    # new_session = models.CallSession(user_id=current_user.uid, status="started")
-    # session.add(new_session)
-    # session.commit()
-    # session.refresh(new_session)
-    # session_id = new_session.id
-    session_id = f"temp_session_for_{current_user.uid}"  # Placeholder
+    print(
+        f"Starting call for user ID: {current_user.id}, Firebase UID: {current_user.firebase_uid}")
+    # Create a new CallSession entry in the DB, link to current_user.id
+    # Use the DB user's primary key
+    new_session = CallSession(user_id=current_user.id)
+    session.add(new_session)
+    session.commit()
+    session.refresh(new_session)
+    session_id = new_session.id
+    print(f"Created new call session with ID: {session_id}")
     return {"session_id": session_id, "message": "Call session started"}
 
 
 @app.post("/api/rag/query")
 # Define request body model later
-async def rag_query(query: dict, current_user: UserInfo = Depends(get_current_user), session: Session = Depends(get_session)):
+async def rag_query(query: dict, current_user: User = Depends(get_current_user), session: Session = Depends(get_session)):
     """Handles RAG query processing (protected)."""
     # TODO: Implement RAG logic (Pinecone -> LLM)
     transcript = query.get("transcript")
     session_id = query.get("session_id")
-    # TODO: Fetch CallSession from DB using session_id and verify ownership
-    # TODO: Store transcript/query and response in DB
-    return {"response": f"Processed query for {current_user.uid} in session {session_id}: {transcript}"}
+    return {"response": f"Processed query for user {current_user.id} in session {session_id}: {transcript}"}
 
 
 @app.get("/api/analytics/report")
 # Assuming admin access check needed
-async def get_analytics_report(current_user: UserInfo = Depends(get_current_user), session: Session = Depends(get_session)):
+async def get_analytics_report(current_user: User = Depends(get_current_user), session: Session = Depends(get_session)):
     """Returns analytics summary (protected)."""
     # TODO: Add role/permission check for admin access
     # TODO: Implement analytics retrieval using DB session
@@ -193,7 +244,7 @@ async def get_analytics_report(current_user: UserInfo = Depends(get_current_user
 
 @app.get("/api/admin/export")
 # Assuming admin access check needed
-async def export_analytics(current_user: UserInfo = Depends(get_current_user), session: Session = Depends(get_session)):
+async def export_analytics(current_user: User = Depends(get_current_user), session: Session = Depends(get_session)):
     """Returns analytics as CSV (protected)."""
     # TODO: Add role/permission check for admin access
     # TODO: Implement CSV export using DB session
@@ -239,6 +290,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str, token: str |
     # TODO: Validate session_id belongs to current_user
     # TODO: Initiate Deepgram STT connection here
 
+    # --- Main WebSocket Loop ---
     try:
         while True:
             data = await websocket.receive()
