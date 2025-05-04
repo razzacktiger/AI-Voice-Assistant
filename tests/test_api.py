@@ -1,5 +1,6 @@
 # Tests for api.py will go here
 
+from api import handle_deepgram_message
 import pytest
 import pytest_asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -306,12 +307,17 @@ async def test_websocket_deepgram_flow(
 ):
     """Tests Deepgram connection setup, simulated forwarding, and cleanup."""
     # --- Setup Mocks (Revised Strategy - Keep as is) ---
+    # 1. Mock the final connection object and its methods
     mock_dg_connection = AsyncMock()
     mock_dg_connection.on = MagicMock()
-    # We will call this mock directly later
     mock_dg_connection.send = AsyncMock()
     mock_dg_connection.finish = AsyncMock()
-    mock_stream_method = MagicMock(return_value=mock_dg_connection)
+
+    # 2. Mock the 'stream' method itself, configured to return the connection
+    #    Needs to be AsyncMock because the real stream() is awaited
+    mock_stream_method = AsyncMock(return_value=mock_dg_connection)
+
+    # 3. Mock the object returned by v("1")
     mock_v1_object = MagicMock()
     mock_v1_object.stream = mock_stream_method
     mock_dg_client.listen = MagicMock()
@@ -397,6 +403,77 @@ async def test_websocket_deepgram_flow(
 
 # TODO: Add tests for Deepgram event handler logic (e.g., on_message creating transcripts)
 # This might require more complex mocking of the 'result' object passed to handlers.
+
+# --- Test for handle_deepgram_message ---
+
+# Import the standalone handler function
+
+
+@pytest.mark.asyncio
+@patch('api.logging.info')  # Patch logging.info within the api module
+@patch('api.logging.warning')  # Patch logging.warning within the api module
+async def test_handle_deepgram_message_handler(mock_log_warning, mock_log_info):
+    """Tests the standalone handle_deepgram_message function."""
+
+    # Case 1: Valid transcript
+    mock_result_valid = MagicMock()
+    # Build the nested structure expected by the handler
+    mock_result_valid.channel.alternatives = [MagicMock()]
+    mock_result_valid.channel.alternatives[0].transcript = "Hello world"
+
+    await handle_deepgram_message(mock_result_valid)
+    mock_log_info.assert_called_once_with("Deepgram ->Transcript: Hello world")
+    mock_log_warning.assert_not_called()
+
+    # Reset mocks for next case
+    mock_log_info.reset_mock()
+    mock_log_warning.reset_mock()
+
+    # Case 2: Empty transcript (should do nothing)
+    mock_result_empty = MagicMock()
+    mock_result_empty.channel.alternatives = [MagicMock()]
+    # Whitespace only
+    mock_result_empty.channel.alternatives[0].transcript = "   "
+
+    await handle_deepgram_message(mock_result_empty)
+    mock_log_info.assert_not_called()
+    mock_log_warning.assert_not_called()
+
+    # Reset mocks
+    mock_log_info.reset_mock()
+    mock_log_warning.reset_mock()
+
+    # Case 3: Malformed result (missing alternatives)
+    mock_result_malformed1 = MagicMock()
+    mock_result_malformed1.channel.alternatives = []  # Empty list
+
+    await handle_deepgram_message(mock_result_malformed1)
+    mock_log_info.assert_not_called()
+    # Use call_args to check the logged warning message content if needed
+    mock_log_warning.assert_called_once()
+    # Example check: assert "unexpected message structure" in mock_log_warning.call_args[0][0]
+
+    # Reset mocks
+    mock_log_info.reset_mock()
+    mock_log_warning.reset_mock()
+
+    # Case 4: Malformed result (missing channel)
+    mock_result_malformed2 = MagicMock()
+    del mock_result_malformed2.channel  # Ensure channel attribute doesn't exist
+
+    await handle_deepgram_message(mock_result_malformed2)
+    mock_log_info.assert_not_called()
+    mock_log_warning.assert_called_once()
+
+    # Reset mocks
+    mock_log_info.reset_mock()
+    mock_log_warning.reset_mock()
+
+    # Case 5: Null result object
+    await handle_deepgram_message(None)
+    mock_log_info.assert_not_called()
+    mock_log_warning.assert_called_once()
+
 
 # --- Test Cases for HTTP Endpoints ---
 

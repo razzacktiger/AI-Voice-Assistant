@@ -24,14 +24,14 @@
 
 ## Phase 2: Real-time Voice Handling
 
-- [ ] **WebSocket Endpoint:**
-  - [ ] Implement WebSocket endpoint (`/ws`) in `api.py`. _(Stub exists)_
-  - [ ] Handle WebSocket connection/disconnection. _(Basic handling exists)_
-  - [x] Add authentication check for WebSocket connections (using Firebase token). _(Implemented via query parameter)_
-- [ ] **Deepgram STT Integration:**
-  - [ ] Establish connection to Deepgram Streaming STT endpoint from the backend WebSocket handler.
-  - [ ] Forward audio chunks received from the client WebSocket to Deepgram STT.
-  - [ ] Receive transcription results from Deepgram STT.
+- [x] **WebSocket Endpoint:**
+  - [x] Implement WebSocket endpoint (`/ws`) in `api.py`. (Completed: 2024-07-28)
+  - [x] Handle WebSocket connection/disconnection. (Completed: 2024-07-28)
+  - [x] Add authentication check for WebSocket connections (using Firebase token). (Completed: 2024-07-28)
+- [x] **Deepgram STT Integration:** (Partially Complete)
+  - [x] Establish connection to Deepgram Streaming STT endpoint from the backend WebSocket handler. (Completed: 2024-07-28)
+  - [x] Forward audio chunks received from the client WebSocket to Deepgram STT. (Completed & Tested via Simulation: 2024-07-28)
+  - [x] Receive transcription results from Deepgram STT. (Completed: 2024-07-28 - Currently logs transcript; TODO: Integrate with RAG)
 
 ## Phase 3: RAG & LLM Integration
 

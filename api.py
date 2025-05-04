@@ -15,6 +15,7 @@ from models import User, CallSession
 from deepgram import (DeepgramClient, DeepgramClientOptions,
                       LiveTranscriptionEvents, LiveOptions,)
 import logging
+import functools  # Import functools if needed later
 
 # Load environment variables
 load_dotenv()
@@ -287,6 +288,61 @@ async def get_current_user_ws(token: str | None = Query(None)) -> UserInfo | Non
     return UserInfo(uid=user_payload["uid"], email=user_payload.get("email"))
 
 
+# --- Standalone Deepgram Event Handlers ---
+
+async def handle_deepgram_message(result, **kwargs):
+    """Handles incoming transcript messages from Deepgram."""
+    # The 'self' argument is removed as it's a standalone function
+    if result and hasattr(result, 'channel') and hasattr(result.channel, 'alternatives') and \
+       len(result.channel.alternatives) > 0 and hasattr(result.channel.alternatives[0], 'transcript'):
+        sentence = result.channel.alternatives[0].transcript
+        if len(sentence.strip()) == 0:  # Check if transcript is empty or just whitespace
+            return
+        logging.info(f"Deepgram ->Transcript: {sentence}")
+        # TODO: Process the transcript (e.g., RAG query, send back to client?)
+    else:
+        logging.warning(
+            f"Deepgram -> Received unexpected message structure: {result}")
+
+
+async def handle_deepgram_metadata(metadata, **kwargs):
+    """Handles metadata messages from Deepgram."""
+    logging.info(f"Deepgram -> Metadata: {metadata}")
+
+
+async def handle_deepgram_speech_started(speech_started, **kwargs):
+    """Handles speech started events from Deepgram."""
+    logging.info("Deepgram -> Speech Started")
+
+
+async def handle_deepgram_utterance_end(utterance_end, **kwargs):
+    """Handles utterance end events from Deepgram."""
+    logging.info("Deepgram -> Utterance Ended")
+    # utterance_transcript = transcript_collector.get() # Need state management if collecting
+    # logging.info(f"Utterance Transcript: {utterance_transcript}")
+
+
+async def handle_deepgram_error(error, **kwargs):
+    """Handles error messages from Deepgram."""
+    logging.error(f"Deepgram -> Error: {error}")
+    # TODO: Decide how to propagate errors (e.g., close client connection?)
+
+
+async def handle_deepgram_open(open_event, **kwargs):
+    """Handles the connection open event from Deepgram."""
+    logging.info("Deepgram -> Connection Opened.")
+
+
+async def handle_deepgram_close(close_event, **kwargs):
+    """Handles the connection close event from Deepgram."""
+    logging.info("Deepgram -> Connection Closed")
+
+
+async def handle_deepgram_unhandled(unhandled, **kwargs):
+    """Handles unhandled messages from Deepgram."""
+    logging.warning(f"Deepgram -> Unhandled message: {unhandled}")
+
+
 @app.websocket("/ws/{session_id}")
 async def websocket_endpoint(
     websocket: WebSocket,
@@ -350,7 +406,7 @@ async def websocket_endpoint(
 
     # --- Deepgram Connection Setup ---
     dg_connection = None
-    transcript_collector = []  # Simple list to collect transcripts for now
+    # transcript_collector = [] # State needed if collecting across utterances
 
     try:
         print("Attempting to connect to Deepgram...")
@@ -365,64 +421,26 @@ async def websocket_endpoint(
             # Add other options like interim_results, endpointing, etc.
         )
 
-        # Create Deepgram connection - USE asyncwebsocket instead of asynclive
-        dg_connection = deepgram.listen.asyncwebsocket.v(
-            "1").stream(dg_options)
+        # Create Deepgram connection
+        dg_connection = await deepgram.listen.asyncwebsocket.v("1").stream(dg_options)
 
-        # --- Deepgram Event Handlers ---
-        async def on_message(self, result, **kwargs):
-            # Ensure result has the expected structure before accessing deeply
-            if result and hasattr(result, 'channel') and hasattr(result.channel, 'alternatives') and \
-               len(result.channel.alternatives) > 0 and hasattr(result.channel.alternatives[0], 'transcript'):
-                sentence = result.channel.alternatives[0].transcript
-                if len(sentence.strip()) == 0:  # Check if transcript is empty or just whitespace
-                    return
-                logging.info(f"Deepgram ->Transcript: {sentence}")
-                # TODO: Process the transcript (e.g., RAG query, send back to client?)
-                # For now, just log it.
-                # Example: await websocket.send_text(f"Transcript: {sentence}")
-            else:
-                logging.warning(
-                    f"Deepgram -> Received unexpected message structure: {result}")
-
-        async def on_metadata(self, metadata, **kwargs):
-            print(f"Deepgram Metadata: {metadata}")
-
-        async def on_speech_started(self, speech_started, **kwargs):
-            print("Deepgram Speech Started")
-
-        async def on_utterance_end(self, utterance_end, **kwargs):
-            print("Deepgram Utterance Ended")
-            # If we have collected transcript parts, maybe process them here?
-            if transcript_collector:
-                full_transcript = " ".join(transcript_collector)
-                print(f"Utterance Transcript: {full_transcript}")
-                # TODO: Consider if RAG/LLM triggers here or only on final
-                transcript_collector.clear()  # Clear for next utterance
-
-        async def on_error(self, error, **kwargs):
-            print(f"Deepgram Error: {error}")
-            # TODO: Handle potential closure of WebSocket connection to client
-
-        async def on_open(self, open, **kwargs):
-            print("Deepgram Connection Opened.")
-
-        async def on_close(self, close, **kwargs):
-            print("Deepgram Connection Closed.")
-
-        # Assign event handlers
-        dg_connection.on(LiveTranscriptionEvents.Transcript, on_message)
-        dg_connection.on(LiveTranscriptionEvents.Metadata, on_metadata)
-        dg_connection.on(
-            LiveTranscriptionEvents.SpeechStarted, on_speech_started)
+        # --- Assign Standalone Event Handlers ---
+        # Use the functions defined outside the endpoint
+        dg_connection.on(LiveTranscriptionEvents.Transcript,
+                         handle_deepgram_message)
+        dg_connection.on(LiveTranscriptionEvents.Metadata,
+                         handle_deepgram_metadata)
+        dg_connection.on(LiveTranscriptionEvents.SpeechStarted,
+                         handle_deepgram_speech_started)
         dg_connection.on(LiveTranscriptionEvents.UtteranceEnd,
-                         on_utterance_end)
-        dg_connection.on(LiveTranscriptionEvents.Error, on_error)
-        dg_connection.on(LiveTranscriptionEvents.Open, on_open)
-        dg_connection.on(LiveTranscriptionEvents.Close, on_close)
+                         handle_deepgram_utterance_end)
+        dg_connection.on(LiveTranscriptionEvents.Error, handle_deepgram_error)
+        # dg_connection.on(LiveTranscriptionEvents.Open, handle_deepgram_open) # Usually not needed
+        dg_connection.on(LiveTranscriptionEvents.Close, handle_deepgram_close)
+        dg_connection.on(LiveTranscriptionEvents.Unhandled,
+                         handle_deepgram_unhandled)
 
-        print("Deepgram connection and handlers configured.")
-        # TODO: Start forwarding audio from client WebSocket to dg_connection
+        logging.info("Deepgram connection and handlers configured.")
 
         # --- Main WebSocket Loop (Expect Bytes for Audio) ---
         while True:
