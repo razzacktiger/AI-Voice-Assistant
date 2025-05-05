@@ -12,6 +12,17 @@ sqlmodel
 
 # Testing
 pytest
-pytest-asyncio
+pytest-cov
+pytest-mock
+pytest-asyncio # Added for async test support
+
+# Type checking
+
+# Added for background tasks
+fastapi-utils
+
+# Added for TestClient
 httpx
- 
+
+# Added for mocking HTTPX requests (optional, useful for external APIs)
+respx

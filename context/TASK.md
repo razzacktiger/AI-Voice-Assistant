@@ -43,15 +43,15 @@
   - [x] Create function to format prompt (transcript + Pinecone results) and call GPT-4. (Completed: 2025-05-04)
 - [ ] **RAG Query Logic (`/api/rag/query` or WebSocket flow):**
   - [x] Integrate transcript reception -> Pinecone query -> LLM call -> response generation. (Completed: 2025-05-04 - Currently logs LLM response in handler)
-  - [ ] Implement basic session memory (e.g., store conversation history in DB or cache linked to session ID).
+  - [x] Implement basic session memory (e.g., store conversation history in DB or cache linked to session ID). (Completed: 2025-05-04 - Stores transcript/response in CallSession.conversation_history)
 
 ## Phase 4: TTS & Response Delivery
 
-- [ ] **Deepgram TTS Integration:**
-  - [ ] Implement function to call Deepgram TTS with LLM response text.
-  - [ ] Stream TTS audio received from Deepgram back to the client via the WebSocket.
-- [ ] **Connect RAG to TTS:**
-  - [ ] Trigger TTS generation after receiving the final LLM response.
+- [x] **Deepgram TTS Integration:** (Completed: 2025-05-05)
+  - [x] Implement function to call Deepgram TTS with LLM response text (`api/tts.py`). (Completed: 2025-05-05)
+  - [x] Stream TTS audio received from Deepgram back to the client via the WebSocket. (Completed: 2025-05-05)
+- [x] **Connect RAG to TTS:** (Completed: 2025-05-05)
+  - [x] Trigger TTS generation after receiving the final LLM response (`api/websocket.py`). (Completed: 2025-05-05)
 
 ## Phase 5: Logging, Analytics & Admin
 
@@ -78,9 +78,10 @@
 ## Phase 7: Testing & Refinement
 
 - [ ] **Unit Tests:**
-  - [ ] Set up `/tests` directory.
-  - [ ] Write unit tests for authentication, API endpoints, RAG logic, etc.
-  - [x] Refactor tests into separate files per module. (Completed: 2025-05-04)
+  - [x] Set up `/tests` directory. (Completed: 2025-05-05)
+  - [x] Write unit tests for authentication, API endpoints, RAG logic, etc. (Completed & Passed for refactored modules: 2025-05-05)
+  - [x] Refactor tests into separate files per module. (Completed: 2025-05-05)
+  - [x] Debug and fix failing tests after refactoring. (Completed: 2025-05-05)
 - [ ] **Non-Functional Requirements:**
   - [ ] Test latency (< 1.5s).
   - [ ] Test concurrency.
