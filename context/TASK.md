@@ -55,13 +55,21 @@
 
 ## Phase 5: Logging, Analytics & Admin
 
-- [ ] **Logging:**
-  - [ ] Implement logging for calls, queries, and errors to the PostgreSQL database.
-  - [ ] Implement 30-day rolling log retention logic.
-- [ ] **Analytics Endpoint (`/api/analytics/report`):**
-  - [ ] Implement logic to query logs and generate summary statistics. _(Stub exists)_
-- [ ] **Admin Export (`/api/admin/export`):**
-  - [ ] Implement logic to query analytics data and return as CSV. _(Stub exists)_
+- [x] **Logging:** (Completed: 2025-05-05)
+  - [x] Define `LogEntry` SQLModel in `api/models.py`.
+  - [x] Add `add_log_entry` utility in `api/logging_utils.py`.
+  - [x] Integrate `add_log_entry` calls throughout `api/websocket.py` flow.
+  - [x] Implement background task (`delete_old_logs`) to prune old logs.
+  - [x] Add unit tests for `delete_old_logs`.
+- [x] **Analytics:** (Completed: 2025-05-05)
+  - [x] Create `get_analytics_report` function (calculating average call duration, total calls, errors, etc.).
+  - [x] Create `/analytics/summary` endpoint.
+  - [x] Create `/analytics/export` endpoint (CSV export).
+  - [x] Add unit tests for analytics functions and endpoints.
+- [x] **Admin Interface:** (Completed: 2025-05-05)
+  - [x] Create `/admin/logs` endpoint (fetch logs with filtering/pagination).
+  - [x] Add unit tests for admin endpoint.
+  - [ ] (Optional) Build a simple frontend or use a tool like FastAPI Admin.
 
 ## Phase 6: Frontend & Deployment (Aligns with Original Week 1 & 2 Goals)
 
@@ -77,7 +85,7 @@
 
 ## Phase 7: Testing & Refinement
 
-- [ ] **Unit Tests:**
+- [x] **Unit Tests:** (Completed: 2025-05-05)
   - [x] Set up `/tests` directory. (Completed: 2025-05-05)
   - [x] Write unit tests for authentication, API endpoints, RAG logic, etc. (Completed & Passed for refactored modules: 2025-05-05)
   - [x] Refactor tests into separate files per module. (Completed: 2025-05-05)
