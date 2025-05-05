@@ -130,6 +130,17 @@ class LogEntry(SQLModel, table=True):
 
 # Remove explicit index definition - index=True on timestamp field is sufficient
 
+# --- Analytics Models ---
+
+
+class AnalyticsReport(SQLModel):
+    total_calls: int
+    average_call_duration_seconds: Optional[float] = None
+    total_error_calls: int
+    error_rate: Optional[float] = None
+    # Add more fields as needed, e.g., distribution of call statuses
+
+
 # --- Initial table creation call ---
 # You might call this once manually or use Alembic migrations for production
 # create_db_and_tables()

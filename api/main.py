@@ -15,6 +15,8 @@ import logging
 # Import modules from the api package
 # Assuming TTS will be added later
 from . import database, auth, websocket, models, rag
+from .analytics import router as analytics_router
+from .admin import router as admin_router
 
 # --- Background Task Imports ---
 from fastapi_utils.tasks import repeat_every
@@ -77,6 +79,8 @@ app.add_middleware(
 
 # Include WebSocket route from the websocket module's router
 app.include_router(websocket.router)
+app.include_router(analytics_router, prefix="/analytics", tags=["Analytics"])
+app.include_router(admin_router, prefix="/admin", tags=["Admin"])
 
 
 @app.get("/")
