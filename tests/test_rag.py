@@ -214,7 +214,8 @@ async def test_query_rag_system_pinecone_disabled(mock_to_thread, mock_get_emb, 
     # Mock to_thread to only call the LLM method
     async def to_thread_side_effect_no_pinecone(func, *args, **kwargs):
         if func == mock_openai_client_fixture.chat.completions.create:
-            return func(*args, **kwargs)  # Call the underlying mock
+            # Await a simple awaitable returning the result
+            return await asyncio.sleep(0, result=func(*args, **kwargs))
         else:
             # Should not be called for pinecone in this test
             raise ValueError("Unexpected function passed to mock_to_thread")
@@ -231,7 +232,8 @@ async def test_query_rag_system_pinecone_disabled(mock_to_thread, mock_get_emb, 
     assert response == "LLM Answer without Pinecone"
     assert "Pinecone index not available or not found, skipping vector search." in caplog.text
     mock_get_emb.assert_called_once_with(transcript)
-    mock_to_thread.assert_awaited_once()  # Only called for LLM
+    # We need to await the side effect now
+    mock_to_thread.assert_awaited_once()
     # Verify sync method called via to_thread
     mock_openai_client_fixture.chat.completions.create.assert_called_once()
 
@@ -250,40 +252,35 @@ async def test_query_rag_system_pinecone_error(mock_to_thread, mock_get_emb, moc
 
     mock_llm_completion = MagicMock()
     mock_llm_completion.choices = [MagicMock()]
-    mock_llm_completion.choices[0].message.content = "LLM Answer after Pinecone fail"
+    mock_llm_completion.choices[0].message.content = "LLM Fallback Answer"
     mock_openai_client_fixture.chat.completions.create.return_value = mock_llm_completion
 
-    # Configure mock_to_thread: Pinecone raises error, LLM returns result
+    # Mock to_thread to simulate Pinecone error and successful LLM call
     async def to_thread_side_effect_pc_fail(func, *args, **kwargs):
         # Explicitly call the mocked sync method to check assertions later
         if func == mock_pinecone_index_fixture.query:
-            # Call the underlying mock which is configured to raise the error
-            # The error is raised here, stopping execution before the explicit raise
-            func(*args, **kwargs)
-            # This line won't be reached if the above raises as expected
-            raise pinecone_error  # Keep for safety, but shouldn't be needed
+            # Let the side_effect (exception) happen
+            return await asyncio.sleep(0, result=func(*args, **kwargs))
         elif func == mock_openai_client_fixture.chat.completions.create:
-            # Call the underlying LLM mock
-            return func(*args, **kwargs)
+            # LLM call should still succeed
+            return await asyncio.sleep(0, result=func(*args, **kwargs))
         else:
             raise ValueError("Unexpected function passed to mock_to_thread")
     mock_to_thread.side_effect = to_thread_side_effect_pc_fail
 
-    transcript = "Query with pinecone fail"
-    # Ensure the mock index is injected correctly
+    transcript = "Query with pinecone error"
     with patch('api.rag._openai_client', mock_openai_client_fixture), \
             patch('api.rag._pinecone_index', mock_pinecone_index_fixture), \
-            patch('api.rag.initialize_pinecone'), \
-            patch('api.rag.initialize_openai'):
+            patch('api.rag.initialize_openai'), \
+            patch('api.rag.initialize_pinecone'):
         response = await query_rag_system(transcript, [])
 
-    assert response == "LLM Answer after Pinecone fail"
+    assert response == "LLM Fallback Answer"
     assert "Error querying Pinecone: Pinecone Down!" in caplog.text
     mock_get_emb.assert_called_once_with(transcript)
-    # Should still try both pinecone and llm
+    # Called for Pinecone (failed) and LLM (succeeded)
     assert mock_to_thread.await_count == 2
-    mock_pinecone_index_fixture.query.assert_called_once()  # Verify attempt
-    # Verify LLM was called
+    mock_pinecone_index_fixture.query.assert_called_once()
     mock_openai_client_fixture.chat.completions.create.assert_called_once()
 
 
@@ -291,39 +288,41 @@ async def test_query_rag_system_pinecone_error(mock_to_thread, mock_get_emb, moc
 @patch('api.rag.get_openai_embedding', new_callable=AsyncMock)
 @patch('asyncio.to_thread', new_callable=AsyncMock)
 async def test_query_rag_system_llm_error(mock_to_thread, mock_get_emb, mock_openai_client_fixture, mock_pinecone_index_fixture, caplog):
-    """Tests RAG query when the final LLM call fails."""
-    caplog.set_level(logging.ERROR)  # Capture ERROR level logs
+    """Tests RAG query when the LLM call fails."""
+    caplog.set_level(logging.ERROR)
     dummy_embedding = [0.1] * 1536
     mock_get_emb.return_value = dummy_embedding
 
-    pinecone_query_response = {'matches': []}
-    mock_pinecone_index_fixture.query.return_value = pinecone_query_response
-
-    llm_error = Exception("LLM Unavailable!")
+    # Configure Pinecone mock to succeed
+    mock_pinecone_index_fixture.query.return_value = {
+        'matches': [{'id': 'vec1', 'score': 0.9, 'metadata': {'text': 'Context'}}]
+    }
+    # Configure LLM mock to fail
+    llm_error = Exception("LLM Unavailable")
     mock_openai_client_fixture.chat.completions.create.side_effect = llm_error
 
+    # Mock to_thread to simulate Pinecone success and LLM error
     async def to_thread_side_effect_llm_fail(func, *args, **kwargs):
         # Explicitly call the mocked sync method to check assertions later
         if func == mock_pinecone_index_fixture.query:
-            return func(*args, **kwargs)
+            return await asyncio.sleep(0, result=func(*args, **kwargs))
         elif func == mock_openai_client_fixture.chat.completions.create:
-            result = func(*args, **kwargs)  # This will raise the side_effect
-            raise llm_error
+            # Let the side_effect (exception) happen
+            return await asyncio.sleep(0, result=func(*args, **kwargs))
         else:
             raise ValueError("Unexpected function passed to mock_to_thread")
     mock_to_thread.side_effect = to_thread_side_effect_llm_fail
 
-    transcript = "Query with LLM fail"
-    # Ensure mocks are injected
+    transcript = "Query with LLM error"
     with patch('api.rag._openai_client', mock_openai_client_fixture), \
             patch('api.rag._pinecone_index', mock_pinecone_index_fixture), \
-            patch('api.rag.initialize_pinecone'), \
-            patch('api.rag.initialize_openai'):
+            patch('api.rag.initialize_openai'), \
+            patch('api.rag.initialize_pinecone'):
         response = await query_rag_system(transcript, [])
 
-    # Check exact string
+    # Check exact string matches the one in rag.py
     assert response == "Sorry, I encountered an error trying to generate a response."
-    assert "Error calling OpenAI LLM: LLM Unavailable!" in caplog.text
+    assert "Error calling OpenAI LLM: LLM Unavailable" in caplog.text
     mock_get_emb.assert_called_once_with(transcript)
     assert mock_to_thread.await_count == 2
     mock_pinecone_index_fixture.query.assert_called_once()

@@ -26,3 +26,6 @@ httpx
 
 # Added for mocking HTTPX requests (optional, useful for external APIs)
 respx
+
+# Added for freezing time in tests
+pytest-freezegun
